@@ -1,7 +1,5 @@
 {
-    "port": "/dev/ttyS14",
     "configuration": "cpu=atmega2560",
     "board": "arduino:avr:mega",
-    "programmer": "arduino:avrisp",
     "sketch": "led_wall.ino"
 }
