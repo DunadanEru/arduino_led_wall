@@ -191,7 +191,7 @@ void operate_controlElements(int ctrlLED, int pinState, int chipNum) // ctrlLED 
 int chipselect(int num1)
 {
   int result;
-  result = ((num1 - (num1 % 16)) / 16);
+  result = ((num1 - (num1 % numPWM)) / numPWM);
 
   return result;
 }
