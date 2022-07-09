@@ -4,9 +4,14 @@
 
 #define numPWM 16 // number of pwms to init
 #define numPins 9 // number of pins attached
+#define serial_speed 19200
+#define i2c_speed 100000
+#define debug_toggle 1 
+const int blockondelay = 100;     // delay if incorrect command recieved from desktop app
 
 int chipselect(int num1);
-void operateLED(int num1, int num2, int num3);
+void operate_controlElements(int num1, int pinState, int chipNum);
+void operate_relays(int icPin, int pinState, int chipNum, int printPin);
 
 uint8_t Pin[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}; // array of pins
 
@@ -31,7 +36,6 @@ Adafruit_PWMServoDriver pwm15 = Adafruit_PWMServoDriver(0x4f);
 int inChar = 0;       // used for string
 int pinState = 0;     // desired state of IC pin high or low
 int pinNum = 0;       // incoming number from PC
-int chNum = 0;        // number of characters in pinNum
 int ctrlLED = 0;      // led control number incoming from PC
 int chipNum = 0;      // number of controller in use
 String inString = ""; // string to hold input
@@ -39,7 +43,7 @@ int dtime = 1;
 
 void setup()
 {
-  Serial.begin(19200);
+  Serial.begin(serial_speed);
 
   pwm0.begin();
   pwm0.setPWMFreq(1000);
@@ -96,7 +100,7 @@ void setup()
   // if you want to really speed stuff up, you can go into 'fast 400khz I2C' mode
   // some i2c devices dont like this so much so if you're sharing the bus, watch
   // out for this!
-  Wire.setClock(100000);
+  Wire.setClock(i2c_speed);
 
   for (int i = 0; i <= 15; i++)
   { // Turn off all relays
@@ -144,10 +148,10 @@ void loop()
   // Read serial input for commands from desktop app, monitoring LED Wall with Kinect
   if (Serial.available() > 0)
   {
-    inChar = Serial.read();                     // get incoming byte from serial
-    if (isDigit(inChar))                        // check if incoming character is number
+    inChar = Serial.read(); // get incoming byte from serial
+    if (isDigit(inChar))    // check if incoming character is number
     {
-      inString += (char)inChar;                 // convert the incoming byte to a char and add it to the string
+      inString += (char)inChar; // convert the incoming byte to a char and add it to the string
     }
 
     // if you get a newline (command ends), parse string to get which LED need to be contrilled
@@ -157,647 +161,30 @@ void loop()
       pinState = (pinNum % 10);                 // get last digit which is NEW state of LED
       ctrlLED = ((pinNum - pinState) / 10) - 1; // get LED number to control
       chipNum = chipselect(ctrlLED);            // get on which IC controled LED is located
-      inString = ""; // RESET string for new input:
+      inString = "";                            // RESET string for new input:
       // DEBUG
       // Serial.print("LED to control #");
       // Serial.println(ctrlLED);
       // Serial.println(chipNum);
 
-      
-
-      if (pinNum > 9999)
-      {
-        chNum = 5;
-      }
-      else if (pinNum > 999)
-      {
-        chNum = 4;
-      }
-      else if (pinNum > 99)
-      {
-        chNum = 3;
-      }
-      else if (pinNum > 9)
-      {
-        chNum = 2;
-      }
-      else
-      {
-        Serial.println("Wrong Input!");
-      }
-
-      operateLED(ctrlLED, pinState, chipNum); // num1 = ctrlLED (LED to control), num2 = pinState, num3 = chipNum (on which IC LED is located)
+      operate_controlElements(ctrlLED, pinState, chipNum); // num1 = ctrlLED (LED to control), pinState = pinState, chipNum = chipNum (on which IC LED is located)
     }
   }
 }
 
-void operateLED(int num1, int num2, int num3) // num1 = ctrlLED (LED to control), num2 = pinState, num3 = chipNum (on which IC LED is located)
+void operate_controlElements(int ctrlLED, int pinState, int chipNum) // ctrlLED (LED to control), pinState = pinState, chipNum (on which IC LED is located)
 {
-  int printPin = num1 + 1;
-  int icPin = num1 - (num3 * 16); // select pin on IC to control
-  int blockondelay = 100;
+  int printPin = ctrlLED + 1;
+  int icPin = ctrlLED - (chipNum * 16); // select pin on IC to control
   // Serial.print("PIN on IC Selected - ");
   // Serial.println(icPin);
 
-  // Serial.println(num3);
+  // Serial.println(chipNum);
 
-  switch (num3)
-  {
-  case 0:
-    switch (num2)
-    {
-    case 0:
-      pwm0.setPWM(icPin, 4096, 0);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> OFF");
-      break;
-    case 1:
-      pwm0.setPWM(icPin, 0, 4096);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    case 8:
-      for (int ik = 0; ik <= 15; ik++)
-      {
-        pwm0.setPWM(ik, 0, 4096);
-        delay(blockondelay);
-      }
-      Serial.print("ALL Pins");
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    default:
-      Serial.print("WRONG Command for LED ==>");
-      Serial.print(printPin);
-      Serial.println(" - No state change!");
-      break;
+  for (int i; i < numPWM; i++){
+    if (chipNum == i){
+      operate_relays(icPin, pinState, chipNum, printPin);
     }
-    break;
-  case 1:
-    switch (num2)
-    {
-    case 0:
-      pwm1.setPWM(icPin, 4096, 0);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> OFF");
-      break;
-    case 1:
-      pwm1.setPWM(icPin, 0, 4096);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    case 8:
-      for (int ik = 0; ik <= 15; ik++)
-      {
-        pwm1.setPWM(ik, 0, 4096);
-        delay(blockondelay);
-      }
-      Serial.print("ALL Pins");
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    default:
-      Serial.print("WRONG Command for LED ==>");
-      Serial.print(printPin);
-      Serial.println(" - No state change!");
-      break;
-    }
-    break;
-  case 2:
-    switch (num2)
-    {
-    case 0:
-      pwm2.setPWM(icPin, 4096, 0);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> OFF");
-      break;
-    case 1:
-      pwm2.setPWM(icPin, 0, 4096);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    case 8:
-      for (int ik = 0; ik <= 15; ik++)
-      {
-        pwm2.setPWM(ik, 0, 4096);
-        delay(blockondelay);
-      }
-      Serial.print("ALL Pins");
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    default:
-      Serial.print("WRONG Command for LED ==>");
-      Serial.print(printPin);
-      Serial.println(" - No state change!");
-      break;
-    }
-    break;
-  case 3:
-    switch (num2)
-    {
-    case 0:
-      pwm3.setPWM(icPin, 4096, 0);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> OFF");
-      break;
-    case 1:
-      pwm3.setPWM(icPin, 0, 4096);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    case 8:
-      for (int ik = 0; ik <= 15; ik++)
-      {
-        pwm3.setPWM(ik, 0, 4096);
-        delay(blockondelay);
-      }
-      Serial.print("ALL Pins");
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    default:
-      Serial.print("WRONG Command for LED ==>");
-      Serial.print(printPin);
-      Serial.println(" - No state change!");
-      break;
-    }
-    break;
-  case 4:
-    switch (num2)
-    {
-    case 0:
-      pwm4.setPWM(icPin, 4096, 0);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> OFF");
-      break;
-    case 1:
-      pwm4.setPWM(icPin, 0, 4096);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    case 8:
-      for (int ik = 0; ik <= 15; ik++)
-      {
-        pwm4.setPWM(ik, 0, 4096);
-        delay(blockondelay);
-      }
-      Serial.print("ALL Pins");
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    default:
-      Serial.print("WRONG Command for LED ==>");
-      Serial.print(printPin);
-      Serial.println(" - No state change!");
-      break;
-    }
-    break;
-  case 5:
-    switch (num2)
-    {
-    case 0:
-      pwm5.setPWM(icPin, 4096, 0);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> OFF");
-      break;
-    case 1:
-      pwm5.setPWM(icPin, 0, 4096);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    case 8:
-      for (int ik = 0; ik <= 15; ik++)
-      {
-        pwm5.setPWM(ik, 0, 4096);
-        delay(blockondelay);
-      }
-      Serial.print("ALL Pins");
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    default:
-      Serial.print("WRONG Command for LED ==>");
-      Serial.print(printPin);
-      Serial.println(" - No state change!");
-      break;
-    }
-    break;
-  case 6:
-    switch (num2)
-    {
-    case 0:
-      pwm6.setPWM(icPin, 4096, 0);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> OFF");
-      break;
-    case 1:
-      pwm6.setPWM(icPin, 0, 4096);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    case 8:
-      for (int ik = 0; ik <= 15; ik++)
-      {
-        pwm6.setPWM(ik, 0, 4096);
-        delay(blockondelay);
-      }
-      Serial.print("ALL Pins");
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    default:
-      Serial.print("WRONG Command for LED ==>");
-      Serial.print(printPin);
-      Serial.println(" - No state change!");
-      break;
-    }
-    break;
-  case 7:
-    switch (num2)
-    {
-    case 0:
-      pwm7.setPWM(icPin, 4096, 0);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> OFF");
-      break;
-    case 1:
-      pwm7.setPWM(icPin, 0, 4096);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    case 8:
-      for (int ik = 0; ik <= 15; ik++)
-      {
-        pwm7.setPWM(ik, 0, 4096);
-        delay(blockondelay);
-      }
-      Serial.print("ALL Pins");
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    default:
-      Serial.print("WRONG Command for LED ==>");
-      Serial.print(printPin);
-      Serial.println(" - No state change!");
-      break;
-    }
-    break;
-  case 8:
-    switch (num2)
-    {
-    case 0:
-      pwm8.setPWM(icPin, 4096, 0);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> OFF");
-      break;
-    case 1:
-      pwm8.setPWM(icPin, 0, 4096);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    case 8:
-      for (int ik = 0; ik <= 15; ik++)
-      {
-        pwm8.setPWM(ik, 0, 4096);
-        delay(blockondelay);
-      }
-      Serial.print("ALL Pins");
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    default:
-      Serial.print("WRONG Command for LED ==>");
-      Serial.print(printPin);
-      Serial.println(" - No state change!");
-      break;
-    }
-    break;
-  case 9:
-    switch (num2)
-    {
-    case 0:
-      pwm9.setPWM(icPin, 4096, 0);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> OFF");
-      break;
-    case 1:
-      pwm9.setPWM(icPin, 0, 4096);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    case 8:
-      for (int ik = 0; ik <= 15; ik++)
-      {
-        pwm9.setPWM(ik, 0, 4096);
-        delay(blockondelay);
-      }
-      Serial.print("ALL Pins");
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    default:
-      Serial.print("WRONG Command for LED ==>");
-      Serial.print(printPin);
-      Serial.println(" - No state change!");
-      break;
-    }
-    break;
-  case 10:
-    switch (num2)
-    {
-    case 0:
-      pwm10.setPWM(icPin, 4096, 0);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> OFF");
-      break;
-    case 1:
-      pwm10.setPWM(icPin, 0, 4096);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    case 8:
-      for (int ik = 0; ik <= 15; ik++)
-      {
-        pwm10.setPWM(ik, 0, 4096);
-        delay(blockondelay);
-      }
-      Serial.print("ALL Pins");
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    default:
-      Serial.print("WRONG Command for LED ==>");
-      Serial.print(printPin);
-      Serial.println(" - No state change!");
-      break;
-    }
-    break;
-  case 11:
-    switch (num2)
-    {
-    case 0:
-      pwm11.setPWM(icPin, 4096, 0);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> OFF");
-      break;
-    case 1:
-      pwm11.setPWM(icPin, 0, 4096);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    case 8:
-      for (int ik = 0; ik <= 15; ik++)
-      {
-        pwm11.setPWM(ik, 0, 4096);
-        delay(blockondelay);
-      }
-      Serial.print("ALL Pins");
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    default:
-      Serial.print("WRONG Command for LED ==>");
-      Serial.print(printPin);
-      Serial.println(" - No state change!");
-      break;
-    }
-    break;
-  case 12:
-    switch (num2)
-    {
-    case 0:
-      pwm12.setPWM(icPin, 4096, 0);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> OFF");
-      break;
-    case 1:
-      pwm12.setPWM(icPin, 0, 4096);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    case 12:
-      for (int ik = 0; ik <= 15; ik++)
-      {
-        pwm12.setPWM(ik, 0, 4096);
-        delay(blockondelay);
-      }
-      Serial.print("ALL Pins");
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    default:
-      Serial.print("WRONG Command for LED ==>");
-      Serial.print(printPin);
-      Serial.println(" - No state change!");
-      break;
-    }
-    break;
-  case 13:
-    switch (num2)
-    {
-    case 0:
-      pwm13.setPWM(icPin, 4096, 0);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> OFF");
-      break;
-    case 1:
-      pwm13.setPWM(icPin, 0, 4096);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    case 8:
-      for (int ik = 0; ik <= 15; ik++)
-      {
-        pwm13.setPWM(ik, 0, 4096);
-        delay(blockondelay);
-      }
-      Serial.print("ALL Pins");
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    default:
-      Serial.print("WRONG Command for LED ==>");
-      Serial.print(printPin);
-      Serial.println(" - No state change!");
-      break;
-    }
-    break;
-  case 14:
-    switch (num2)
-    {
-    case 0:
-      pwm14.setPWM(icPin, 4096, 0);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> OFF");
-      break;
-    case 1:
-      pwm14.setPWM(icPin, 0, 4096);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    case 8:
-      for (int ik = 0; ik <= 15; ik++)
-      {
-        pwm14.setPWM(ik, 0, 4096);
-        delay(blockondelay);
-      }
-      Serial.print("ALL Pins");
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    default:
-      Serial.print("WRONG Command for LED ==>");
-      Serial.print(printPin);
-      Serial.println(" - No state change!");
-      break;
-    }
-    break;
-  case 15:
-    switch (num2)
-    {
-    case 0:
-      pwm15.setPWM(icPin, 4096, 0);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> OFF");
-      break;
-    case 1:
-      pwm15.setPWM(icPin, 0, 4096);
-      Serial.print("LED #");
-      Serial.print(printPin);
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    case 8:
-      for (int ik = 0; ik <= 15; ik++)
-      {
-        pwm15.setPWM(ik, 0, 4096);
-        delay(blockondelay);
-      }
-      Serial.print("ALL Pins");
-      Serial.print(" on IC#");
-      Serial.print(num3);
-      Serial.println(" ==> ON");
-      break;
-    default:
-      Serial.print("WRONG Command for LED ==>");
-      Serial.print(printPin);
-      Serial.println(" - No state change!");
-      break;
-    }
-    break;
-  default:
-    Serial.println("WRONG IC to control");
-    break;
   }
 }
 
@@ -809,10 +196,41 @@ int chipselect(int num1)
   return result;
 }
 
-void initialisePins()
+void operate_relays(int icPin, int pinState, int chipNum, int printPin)
 {
-  for (uint8_t i = 0; i < numPins; i++)
+  switch (pinState)
   {
-    pinMode(Pin[i], OUTPUT); // set as output
+  case 0:
+    pwm15.setPWM(icPin, 4096, 0);
+    Serial.print("LED #");
+    Serial.print(printPin);
+    Serial.print(" on IC#");
+    Serial.print(chipNum);
+    Serial.println(" ==> OFF");
+    break;
+  case 1:
+    pwm15.setPWM(icPin, 0, 4096);
+    Serial.print("LED #");
+    Serial.print(printPin);
+    Serial.print(" on IC#");
+    Serial.print(chipNum);
+    Serial.println(" ==> ON");
+    break;
+  case 8:
+    for (int ik = 0; ik <= 15; ik++)
+    {
+      pwm15.setPWM(ik, 0, 4096);
+      delay(blockondelay);
+    }
+    Serial.print("ALL Pins");
+    Serial.print(" on IC#");
+    Serial.print(chipNum);
+    Serial.println(" ==> ON");
+    break;
+  default:
+    Serial.print("WRONG state Command for LED ==>");
+    Serial.print(printPin);
+    Serial.println(" - No state change!");
+    break;
   }
 }
