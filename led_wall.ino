@@ -2,20 +2,21 @@
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
 
-#define numPWM 16 // number of pwms to init
+#define numPWM 16 // number of PWM's to init
 #define numPins 9 // number of pins attached
-#define serial_speed 19200
-#define i2c_speed 100000
+#define serial_speed 115200   // baudrate for serial communication
+#define i2c_speed 100000      // I2C clock (max is 400k but length and quality of wires affect signal integrity need to be tested for specific application)
 #define debug_toggle 1 
-const int blockondelay = 100;     // delay if incorrect command recieved from desktop app
+const int blockondelay = 100;     // delay if incorrect command received from desktop app
 
-int chipselect(int num1);
+int chipSelect(int num1);
 void operate_controlElements(int num1, int pinState, int chipNum);
 void operate_relays(int icPin, int pinState, int chipNum, int printPin);
 
 uint8_t Pin[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}; // array of pins
 
 // Initialize Adafruit boards / chips /IC's
+// Dynamic variable name approach comsume too much MC recourses.
 Adafruit_PWMServoDriver pwm0 = Adafruit_PWMServoDriver(0x40);
 Adafruit_PWMServoDriver pwm1 = Adafruit_PWMServoDriver(0x41);
 Adafruit_PWMServoDriver pwm2 = Adafruit_PWMServoDriver(0x42);
@@ -154,13 +155,13 @@ void loop()
       inString += (char)inChar; // convert the incoming byte to a char and add it to the string
     }
 
-    // if you get a newline (command ends), parse string to get which LED need to be contrilled
+    // if you get a newline (command ends), parse string to get which LED need to be controlled
     if (inChar == '\n')
     {
       pinNum = inString.toInt();                // convert to int
       pinState = (pinNum % 10);                 // get last digit which is NEW state of LED
       ctrlLED = ((pinNum - pinState) / 10) - 1; // get LED number to control
-      chipNum = chipselect(ctrlLED);            // get on which IC controled LED is located
+      chipNum = chipSelect(ctrlLED);            // get on which IC controlled LED is located
       inString = "";                            // RESET string for new input:
       // DEBUG
       // Serial.print("LED to control #");
@@ -188,7 +189,7 @@ void operate_controlElements(int ctrlLED, int pinState, int chipNum) // ctrlLED 
   }
 }
 
-int chipselect(int num1)
+int chipSelect(int num1)
 {
   int result;
   result = ((num1 - (num1 % numPWM)) / numPWM);
